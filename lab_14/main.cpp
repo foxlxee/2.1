@@ -6,7 +6,17 @@
 class HashTableItem {
 public:
 	// Конструктор, который принимает ссылку на строку, которая будет скопирована в m_data
-	HashTableItem(const std::string& data) : m_data(data) {}
+	HashTableItem(const std::string& data) : m_data(data), m_next(nullptr) {}
+
+	// Метод, который устанавливает указатель на следующий элемент в списке
+	void setNext(HashTableItem* item) {
+		m_next = item;
+	}
+
+	// Метод, который возвращает указатель на следующий элемент в списке
+	HashTableItem* next() {
+		return m_next;
+	}
 
 	// Метод, который возвращает константную ссылку на строку
 	const std::string& data() {
@@ -24,11 +34,19 @@ public:
 
 		return hash < 0 ? hash * -1 : hash;
 	}
+
+	// Деструктор
+	~HashTableItem() {
+		if (m_next != nullptr) {
+			delete m_next;
+		}
+	}
 private:
+	HashTableItem* m_next;
 	std::string m_data;
 };
 
-// Класс, который определяет хеш таблицу с наложением (открытой адресацией)
+// Класс, который определяет хеш таблицу со списками
 class HashTable {
 public:
 	// Конструктор, который по умолчанию выделяет динамическую память для 8 указателей на объекты класса HashTableItem
@@ -43,31 +61,28 @@ public:
 		// Иначе у нас коллизия
 		if (m_arr[index] == nullptr) {
 			m_arr[index] = itemToInsert;
-		} else {
-			// Обрабатываем коллизию
-			for (size_t i = 0; i < m_length; i++) {
-				if (m_arr[i] == nullptr) {
-					m_arr[i] = itemToInsert;
-					break;
-				}
-			}
+			m_amountOfAddedLists++;
+			realloc();
+			return;
 		}
-
-		m_amountOfAddedElements++;
-		realloc();
+		
+		// Обрабатываем коллизию
+		HashTableItem* item = m_arr[index];
+		while (item->next() != nullptr) item = item->next();
+		item->setNext(itemToInsert);
 	}
 
 	// Метод, который очищает таблицу
 	void clear() {
 		release();
 		m_length = 8;
-		m_amountOfAddedElements = 0;
+		m_amountOfAddedLists = 0;
 		m_arr = new HashTableItem*[m_length];
 	}
 
 	// Метод, который считывает таблицу из файла содержащего текст
 	bool loadFromFile(const std::string& filePath) {
-		if (m_amountOfAddedElements > 0) clear();
+		if (m_amountOfAddedLists > 0) clear();
 
 		std::ifstream file;
 		file.open(filePath);
@@ -88,11 +103,27 @@ public:
 		file.open(filePath);
 
 		if (!file.is_open()) return false;
-
+		
 		file << "Hash table" << std::endl;
 
 		for (size_t i = 0; i < m_length; i++) {
-			file << i << ": " << (m_arr[i] == nullptr ? "null" : m_arr[i]->data()) << std::endl;
+			file << i << ": ";
+
+			HashTableItem* item = m_arr[i];
+
+			if (item == nullptr) {
+				file << "null";
+			} else {
+				do {
+					file << item->data();
+
+					item = item->next();
+					if (item == nullptr) break;
+					file << " -> ";
+				} while (true);
+			}
+
+			file << std::endl;
 		}
 
 		file.flush();
@@ -107,7 +138,7 @@ public:
 	}
 private:
 	size_t m_length; // Длина массива
-	size_t m_amountOfAddedElements; // Количество добавленных элементов
+	size_t m_amountOfAddedLists; // Количество добавленных списков
 	HashTableItem** m_arr; // Указатель на начало массива указателей в динамической памяти
 
 	// Метод, который освобождает всю динамическую память
@@ -120,9 +151,9 @@ private:
 		delete[] m_arr;
 	}
 
-	// Метод, который перевыделяет память если массив заполнен более чем на 90%
+	// Метод, который перевыделяет память если массив заполнен полностью
 	void realloc() {
-		if ((float)m_amountOfAddedElements / m_length > 0.9) {
+		if (m_amountOfAddedLists == m_length) {
 			size_t newLength = m_length * 2;
 			HashTableItem** newArr = new HashTableItem*[newLength];
 
